@@ -1,0 +1,268 @@
+---
+title: "ETM540 - Homework#3 - Sensitivity Analysis"
+author: "Mala Daryanani"
+date: "October 16, 2018"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, warning=FALSE, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library (magrittr, quietly = TRUE) #Used for pipes/dplyr
+library (dplyr, quietly = TRUE)
+library (ROI, quietly = TRUE)
+library (ROI.plugin.glpk, quietly = TRUE)
+library (ompr, quietly = TRUE)
+library (ompr.roi, quietly = TRUE)
+library (pander, quietly = TRUE)
+```
+
+# Exercise:
+After the recent forest fires, traditional supplier relationships were disrupted and the grocery retailer entire foods, needs to find new local suppliers. They have contacted Meredith Gray to buy as much organically grown ingredients as she could grow. She has three organic farms near Portland with the following characteristics:
+
+```{r}
+FarmData=matrix(c(
+  1,400,1500,2,600,2000,3,300,900), 
+  ncol = 3,byrow=2)
+colnames(FarmData)<-c("Farm","Acreage","WaterAvail")
+FarmData <-as.data.frame(FarmData)
+attach(FarmData)
+pander(FarmData, caption = "Farm Details")
+```
+
+Three crops are needed. However the maximum acreage which can be grown of each crop is limited by amount of appropriate harvesting equipment available:
+```{r}
+CropData=matrix(c(
+  700,6,400,800,4,300,300,2,100), 
+  ncol = 3,byrow=2)
+colnames(CropData)<-c("HarvestCap","WaterReq","Profit")
+row.names(CropData) <- c("Corn","Beans","Wheat")
+CropData <-as.data.frame(CropData)
+attach(CropData)
+pander(CropData, caption = "Crop Details")
+```
+
+## Solution:
+
+### Mathemaical Representation of Meredith Gray's Crop Problem:
+
+$$
+ \begin{split}
+ \begin{aligned}
+ (\#x_{i,j} :Is\;Crop\;i\;in\;Farm\;j )\\
+    \text{Maximize  }   &  \sum_{j} \sum_{i} P_{i} x_{i,j} \\
+    \text{subject to } & \sum_{i} x_{i,j} \leq Acreage_j \; \forall \;j\\
+                       & \sum_{i} R_{j}x_{i,j} \leq WaterAvail_j \; \forall \;j\\
+                      & \sum_{j} x_{i,j} \leq HarvestCap_i \; \forall \;i\\
+                        & x_{i,j} \geq 0  \; \forall \; i,j
+   \end{aligned}
+  \end{split}
+$$
+
+### Build Model with Maximizing Profit given constraints:
+
+```{r}
+MaxCropModel <- MIPModel() %>%
+  add_variable (x[i,j], i=1:3, j=1:3, type="continuous", lb=0) %>%
+  set_objective (sum_expr(sum_expr(Profit[i]*x[i,j],i=1:3), j=1:3),"max") %>%
+  add_constraint (sum_expr(x[i,j], i=1:3) <= Acreage[j], j=1:3) %>% 
+  add_constraint (sum_expr(WaterReq[i]*x[i,j], i=1:3) <= WaterAvail[j], j=1:3) %>% 
+  add_constraint (sum_expr(x[i,j], j=1:3) <= HarvestCap[i], i=1:3) %>% 
+  
+  solve_model(with_ROI(solver = "glpk"))
+MaxCropModel
+
+CropTable =matrix(c((MaxCropModel$solution)), ncol = 3,byrow=3)
+row.names(CropTable) <- c("Farm1", "Farm2","Farm3")
+colnames(CropTable)<-c("Corn","Bean","Wheat")
+pander(CropTable, caption = "Total Crop Produce Plan per Farm")
+```
+
+* As per above table, with given constraints the Maximum Profit = $320,000
+
+* Table includes the amount of each crop to be grown per farm
+
+\pagebreak
+
+### Shadow Prices / Row Duals:
+
+```{r}
+rdualCrop =matrix(c(
+  get_row_duals(MaxCropModel)), ncol = 1)
+dimnames(rdualCrop)<-list(c("Farm1Acreage", "Farm2Acreage", "Farm3Acreage", 
+                            "Farm1WaterAvail", "Farm2WaterAvai","Farm3WaterAvai",
+                            "CornHarvCap","BeanHarvCap","WheatHarvCap"), c("Row Duals"))
+rdualCrop <-as.data.frame(rdualCrop)
+attach(rdualCrop)
+pander(rdualCrop, caption = "Shadow Prices of Constrained Resources")
+```
+
+The shadow price for the Water Availability and Bean Harvest Capacity are more interesting:
+
+Considering the first Row - This means that for Farm1 -> If we increase the Acreage by 1acre (unit change), there will be no affect of the Objective Function (Profit will stay the same)
+
+Whereas, for in Farm 1 if we increase the Water Availability by 1 acre-ft (unit change), this will imply an increase in Profit by $66.67.
+
+Similarly if we increase the Harvest Capacity for Beans by 1 acre (unit change), this will yield to an increase of $33.33 in our objective value.
+
+The entire water availability for each farm is been consumed entirely by the optimal production plan. Increasing the quantity of water available to each farm may allow Meredith Gray to change her production plan and increase the profit. For increase in unit acre-ft of water availability to farm 1, farm2, farm3, will provide additional profit of $66.67/farm.
+
+In addition, as per the optimal production plan, beans are grown upto their maximum harvest capacity, i.e 800 in this case. Hence, any further increase in the harvest capacity fof this particular crop will yield an increase in profit and change the entire production plan. For every unit increase in the beans harvest capacity implies $33.33 increase in our objective value.
+
+\pagebreak
+
+#### Shadow Prices affect: Testing the Model with increase Water Availability =1 acre-ft/farm:
+
+$$
+ \begin{split}
+ \begin{aligned}
+ (\#x_{i,j} :Is\;Crop\;i\;in\;Farm\;j )\\
+    \text{Maximize  }   &  \sum_{i} \sum_{j} P_{i} x_{i,j} \\
+    \text{subject to } & \sum_{i} x_{i,j} \leq Acreage_j \; \forall \;j\\
+                       & \sum_{i} R_{j}x_{i,j} \leq (WaterAvail_j + 1) \;\; \forall \;j\\ 
+  (\#Increase\;total\;water\;availability\;in\;each\;farm\;by\;1acre-ft)\\
+                      & \sum_{j} x_{i,j} \leq HarvestCap_j \; \forall \;i\\
+                        & x_{i,j} \geq 0  \; \forall \; i,j
+  \end{aligned}
+  \end{split}
+$$
+
+```{r}
+WaterAvailIncModel <- MIPModel() %>%
+  add_variable (x[i,j], i=1:3, j=1:3, type="continuous", lb=0) %>%
+  set_objective (sum_expr(sum_expr(Profit[i]*x[i,j],i=1:3), j=1:3),"max") %>%
+  add_constraint (sum_expr(x[i,j], i=1:3) <= Acreage[j], j=1:3) %>% 
+  add_constraint (sum_expr(WaterReq[i]*x[i,j], i=1:3) <= (WaterAvail[j]+1), j=1:3) %>% 
+  add_constraint (sum_expr(x[i,j], j=1:3) <= HarvestCap[i], i=1:3) %>% 
+  
+  solve_model(with_ROI(solver = "glpk"))
+WaterAvailIncModel
+
+WaterAvailInc_table =matrix(c((WaterAvailIncModel$solution)), ncol = 3,byrow=3)
+row.names(WaterAvailInc_table) <- c("Farm1", "Farm2","Farm3")
+colnames(WaterAvailInc_table)<-c("Corn","Bean","Wheat")
+pander(WaterAvailInc_table, 
+       caption = "Crop Produce Plan with Additional Water Available =66.67 acre-ft/farm")
+```
+
+As per above table, with given constraints the Maximum Profit = $320,200. This can also be verified manually - the rduals for Water Availability for each farm = $66.67. So when we increased the availability of water in all the farms, the profit would increase by *$66.67+$66.67+$66.67* = *$200* compared to the previous production plan.
+
+Max Profit with unit change in water avail/farm - Max Profit with existing constraints 
+
+= $(320200 - 32000) = $200
+
+Considering the change in one constraint, the production plan has changed as seen in above table.
+
+
+#### Shadow Price of Underutilzed Resources:
+
+The shadow price on Acreage for each farm is zero.  This means that even a large increase in Acrease for farm1 or farm2 or farm 3, would not affect the maximum profit or the optimal production plan.  Essentially there is plenty of land availabile in each farm which is not been used, so having more would not enable any better profit plan.  
+
+Let's confirm this as well with a numerical example by increasing the Acreage of each farm by _5,000_ acres.
+
+
+$$
+ \begin{split}
+ \begin{aligned}
+    \text{Maximize  }   &  \sum_{i} \sum_{j} P_{i} x_{i,j} \\
+    \text{subject to } & \sum_{i} x_{i,j} \leq (Acreage_j + 100) \; \forall \;j\\
+ (\#Increase\;Acreage\;by\;100acre\;/farm)\\
+                       & \sum_{i} R_{j}x_{i,j} \leq WaterAvail_j \;\; \forall \;j\\
+                      & \sum_{j} x_{i,j} \leq HarvestCap_j \; \forall \;i\\
+                        & x_{i,j} \geq 0  \; \forall \; i,j
+  \end{aligned}
+  \end{split}
+$$
+
+```{r}
+AcreageIncModel <- MIPModel() %>%
+  add_variable (x[i,j], i=1:3, j=1:3, type="continuous", lb=0) %>%
+  set_objective (sum_expr(sum_expr(Profit[i]*x[i,j],i=1:3), j=1:3),"max") %>%
+  add_constraint (sum_expr(x[i,j], i=1:3) <= (Acreage[j]+100), j=1:3) %>% 
+  add_constraint (sum_expr(WaterReq[i]*x[i,j], i=1:3) <= WaterAvail[j], j=1:3) %>% 
+  add_constraint (sum_expr(x[i,j], j=1:3) <= HarvestCap[i], i=1:3) %>% 
+  
+  solve_model(with_ROI(solver = "glpk"))
+AcreageIncModel
+
+AcreageInc_table =matrix(c((AcreageIncModel$solution)), ncol = 3,byrow=3)
+row.names(AcreageInc_table) <- c("Farm1", "Farm2","Farm3")
+colnames(AcreageInc_table)<-c("Corn","Bean","Wheat")
+pander(AcreageInc_table, caption = "Crop Produce Plan with Additional Acreage= 100acre/farm")
+```
+
+As we anticipated, even though we increased each farm with 100 acres, there is no change in the Profit value. The production plan remained as is. This implies that with the existing constrains, there was already under utilized acres of land in each farm, so no matter how much we increase the land further, it won't change the optimal production plan.
+
+### Reduced Costs of Variables / cduals:
+
+```{r}
+cdualCrop =matrix(c(get_column_duals(MaxCropModel)),ncol = 1)
+dimnames(cdualCrop)<-list(c("Farm1Corn","Farm1Bean","Farm1Wheat",
+                            "Farm2Corn","Farm2Bean","Farm2Wheat",
+                            "Farm3Corn", "Farm3Bean", "Farm3Wheat"), c("Column Duals"))
+cdualCrop <-as.data.frame(cdualCrop)
+attach(cdualCrop)
+pander(cdualCrop, caption = "Incorrect Reduced Cost Variables")
+```
+
+The above table provides the cduals / Reduced costs of each crop in farm1, farm2 and farm3 resp. If you notice the wheat grown in each farm yields a value of -33.33. This means that if we increase the growth of wheat by 1 unit in any farm, this will decrease our profit by $33.33. 
+For the remaining crops - Corn and Beans, the value of the resources used in producing them equals that of the profit of each crop resp.
+
+#### Let's check the value of Resources - For Corn in Farm 1 (*i*= 1 & *j*=1)
+```{r}
+CornFarm1_res_used<-cbind(rdualCrop,c(1,0,0,6,0,0,1,1,1))
+colnames(CornFarm1_res_used)<-c("Row Duals", "Corn in Farm1 Resources Used")
+pander(CornFarm1_res_used, caption="Resources Used by Corn in Farm 1 & Shadow Prices")
+```
+
+Simply multiplying across and adding the value, we can see that the shadow cost of the resources used in growing corn in farm1 is:
+
+$\$66.667*6=\$400.02$ which is the same as the profit/corn.
+
+#### Let's check Value of Resources - For Wheat in Farm 1 (*i*= 3 & *j*=1)
+```{r}
+WheatFarm1_res_used<-cbind(rdualCrop,c(1,0,0,2,0,0,0,0,1))
+colnames(WheatFarm1_res_used)<-c("Row Duals", "Wheat in Farm 1 Resources Used")
+pander(WheatFarm1_res_used, caption="Resources Used by Wheat in Farm 1 & Shadow Prices")
+```
+
+Multiplying across and adding the value, we can see that the shadow cost of the resources used in growing wheat in farm1 is:
+
+$\$66.667*2=\$133.34$ which is the same as the profit/wheat. Alas, the profit for each unit growth of wheat is just $\$100$ means that forcing the production of unit acre of wheat will decrease the production plan's profit by $\$33.34$. In other words, the impact on the objective function is $\$-33.34$ which is the same as the cdulas/reduced price entry of Tables.  
+
+#### Results when we grow wheat on atleast 1acre on land:
+$$
+ \begin{split}
+ \begin{aligned}
+    \text{Maximize  }   &  \sum_{i} \sum_{j} P_{i} x_{i,j} \\
+    \text{subject to } & \sum_{i} x_{i,j} \leq Acreage_j \; \forall \;j\\
+                       & \sum_{i} R_{j}x_{i,j} \leq WaterAvail_j \;\; \forall \;j\\
+                      & \sum_{j} x_{i,j} \leq HarvestCap_j \; \forall \;i\\
+                        & x_{i,j} \geq 0 \; \forall \; i \neq3,j\neq1 \\
+                        & x_{3,1} \geq1\\
+  (\#Plan\;to\;grow\;minimum\;1acre\;wheat\;on\;farm1)\\
+  \end{aligned}
+  \end{split}
+$$
+
+```{r}
+WheatFarm1Model <- MIPModel() %>%
+  add_variable (x[i,j], i=1:3, j=1:3, type="continuous", lb=0) %>%
+  set_objective (sum_expr(sum_expr(Profit[i]*x[i,j],i=1:3), j=1:3),"max") %>%
+  add_constraint (sum_expr(x[i,j], i=1:3) <= Acreage[j], j=1:3) %>% 
+  add_constraint (sum_expr(WaterReq[i]*x[i,j], i=1:3) <= WaterAvail[j], j=1:3) %>% 
+  add_constraint (sum_expr(x[i,j], j=1:3) <= HarvestCap[i], i=1:3) %>% 
+  add_constraint(x[3,1]>=1)%>%
+
+  solve_model(with_ROI(solver = "glpk"))
+WheatFarm1Model
+
+WheatFarm1_table =matrix(c((WheatFarm1Model$solution)), ncol = 3,byrow=3)
+row.names(WheatFarm1_table) <- c("Farm1", "Farm2","Farm3")
+colnames(WheatFarm1_table)<-c("Corn","Bean","Wheat")
+pander(WheatFarm1_table, caption = "Crop Produce Plan with atleast wheat 1acre in Farm1")
+```
+
+As we forced the production to grow wheat atleast on 1 acre, the objective value decreased to $319,966.7 (which is exactly $33.3 less than the original optimal solution $320,000). This confirms by the cduals reduced price value on wheat/farm.
+

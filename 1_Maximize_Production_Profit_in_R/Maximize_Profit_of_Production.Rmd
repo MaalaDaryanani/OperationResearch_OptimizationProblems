@@ -1,0 +1,225 @@
+---
+title: "ETM540 Homework#1 - Maximize Production Profit Using Linear Program in R"
+author: "Mala Daryanani"
+date: "October 1, 2018"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## Exercise
+
+Your company has extended production to allow for producing picture frames and is now including a finishing department that primes and paints (or stains) the furniture.
+
+| Characteristic | Chairs | Desks | Frames | Tables | Available  | 
+|---------------:|:-----:|:-----:|:------:|:---------:|:----------:|
+|  Profit        |  $20  |  $14  |    $3  |  $16      |            |
+|  Fabrication   |   6   |   2   |     1  |    4      |   1440     |
+|  Assembly      |   8   |   6   |     1  |    8      |   1440     |
+|  Machining     |   6   |   4   |     1  |   25      |   2000     |
+|  Painting      |   7   |  10   |     2  |   12      |   1000     |
+|  Wood          |  40   |  25   |     5  |   16      |   9600     |
+
+a) Use R Markdown to create your own description of the model.
+b) Extend the R Markdown to show your LP Model.  Be sure to define models.
+c) Solve the model in R
+d) Interpret and discuss the model in R Markdown.
+e) Discuss how one parameter would need to change in order to result in a different production plan.  Demonstrate how this affects the results.
+
+Hint:  Knit your RMarkdown as a PDF or open the HTML version in your browser and print to PDF.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Solve the Linear Program producing Optimal Solution:
+
+With reference to the above table, we are given data to produce chairs, desks, tables and frames. The production process includes fabrication, assembly, manufacturing, painting, wood required. 
+
+## Step 1: Mathematical Representation
+To obtain the maximum profit, we require to break the existing data into a mathematical presentation. Consider:
+
+$P_i$ = Profit per product (i=1-4, for Chairs, Desks, Frames, Tables resp.) 
+
+$x_1$ = #Chairs, $x_2$ = #Desks, $x_3$ = #Frames, $x_4$ = #Tables
+
+$R_{i,j}$ = Required numerical value of resources
+
+$A_j$ = Max. limit of resources available (j=1-5, for given five constraints)
+
+With this information, we can represent the problem as below:
+
+$$
+ \begin{split}
+ \begin{aligned}
+    \text{Maximize  }   &  \sum_{i=1}^4 P_i x_i \\
+    \text{subject to } & \sum_{i=1}^4 R_{i,j}x_i \leq A_j,\forall \; j = 1,2,3,4,5\\
+                       & x_i \geq 0  \; \forall \; i
+  \end{aligned}
+  \end{split}
+$$
+
+## Step 2: Solve the Linear Program using R
+
+First we start creating and solving the problem with the help of R.
+
+### Load the required libraries:
+
+``` {r warning=FALSE, message = FALSE}
+library (pander, quietly = TRUE)
+library (magrittr, quietly = TRUE) #Used for pipes/dplyr
+library(dplyr, quietly = TRUE)
+library (ROI, quietly = TRUE)
+library (ROI.plugin.glpk, quietly = TRUE)
+library (ompr, quietly = TRUE)
+library (ompr.roi, quietly = TRUE)
+```
+
+Pander: The main aim of the pander R package is to provide a minimal and easy tool for rendering R objects into Pandoc's markdown.
+
+Magrittr:Provides a mechanism for chaining commands with a new forward-pipe operator, %>%. This operator will forward a value, or the result of an expression, into the next function call/expression. 
+
+dplr: Is used for working with structured data both in and outside of R. dplyr makes data manipulation for R users easy, consistent, and performant.
+
+ROI:The R Optimization Infrastructure ('ROI') is a sophisticated framework for handling optimization problems in R.
+
+ROI.plugin.glpk: Allows for solving mixed integer linear programming ('MILP') problems as well as all variants/combinations of 'LP', 'IP'.
+
+ompr: Model and solve mixed integer linear programs.
+
+ompr.ROI: A Solver for 'ompr' that Uses the R Optimization Infrastructure ('ROI')
+
+
+### Define variables, objective, constraints & Create MIP model to Solve:
+
+Create an object *Solution* that is of datatype Mixed Integer Program (MIP) model. In addition, we create non-negative variables of continuous datatype.
+
+Further, we define our objective to maximize the profit and include the constraints to be considered.
+
+
+```{r base_case_4var}
+Solution <- MIPModel() %>%
+  add_variable(Chairs, type = "continuous", lb = 0) %>%
+  add_variable(Desks, type = "continuous",lb = 0) %>%
+  add_variable(Frames, type = "continuous",lb = 0) %>%
+  add_variable(Tables, type = "continuous", lb = 0) %>%
+  add_variable(Profit, Type = "continuous", lb =0) %>%
+  
+  set_objective(Profit, "max") %>%
+  
+  add_constraint(Profit==20*Chairs + 14*Desks + 3*Frames + 16*Tables) %>% #profit
+  add_constraint(6*Chairs + 2*Desks + 1*Frames + 4*Tables <= 1440) %>% #fabrication
+  add_constraint(8*Chairs + 6*Desks + 1*Frames + 8*Tables <= 1440) %>% #assembly
+  add_constraint(6*Chairs + 4*Desks + 1*Frames + 25*Tables <= 2000) %>% #machining
+  add_constraint(7*Chairs + 10*Desks + 2*Frames + 12*Tables <= 1000) %>% #painting
+  add_constraint(40*Chairs + 25*Desks + 5*Frames + 16*Tables <= 9600) %>% #wood
+  
+  solve_model(with_ROI(solver = "glpk"))
+
+```
+
+
+##Step 3: Run the program for Results
+
+Run the program and print the result to check the feasibility and values:
+
+
+```{r base_status_4var}
+print(solver_status(Solution))
+```
+
+```{r base_solution_4var}
+p1<- get_solution(Solution, Profit)
+c1<- get_solution(Solution, Chairs)
+d1<- get_solution(Solution, Desks)
+f1<- get_solution(Solution, Frames)
+t1<- get_solution(Solution, Tables)
+```
+
+##Step 4: Results & Interpretation
+
+```{r base_table_4var}
+n <- data.frame(p1,c1,d1,f1,t1, row.names = NULL)
+colnames(n) <- c('Profit\n$','#Chairs', '#Desks', '#Frames', '#Tables')
+pandoc.table(n)
+
+```
+
+The total profit as per the linear problem solution is $2857. This means that with the given resources to manufacture each product and their profit per unit, we can achieve the maximum profit of $2857.
+
+To achieve this profit, out of all the given products, it will be advisable to the Production unit to build the chairs only. Within the given constraints, it is estimated that there can be around 143 chair built to produce the maximum gain. 
+
+Given any other production plan to produce the rest of products might be a feasible option, but it will not provide the maximum profit.
+
+\newpage
+
+#Affects on changing one parameter:
+
+Let's consider changing the value of one variable to see how this affects the existing model. Here, I have changed the fabrication hours required to build a chair - to 16hrs (instead of 6hrs) -
+
+| Characteristic | Chairs | Desks | Frames | Tables | Available  | 
+|---------------:|:-----:|:-----:|:------:|:---------:|:----------:|
+|  Profit        |  $20  |  $14  |    $3  |  $16      |            |
+|  Fabrication   |  16   |   2   |     1  |    4      |   1440     |
+|  Assembly      |   8   |   6   |     1  |    8      |   1440     |
+|  Machining     |   6   |   4   |     1  |   25      |   2000     |
+|  Painting      |   7   |  10   |     2  |   12      |   1000     |
+|  Wood          |  40   |  25   |     5  |   16      |   9600     |
+
+``` {r warning=FALSE, message = FALSE}
+library (pander, quietly = TRUE)
+library (magrittr, quietly = TRUE) #Used for pipes/dplyr
+library(dplyr, quietly = TRUE)
+library (ROI, quietly = TRUE)
+library (ROI.plugin.glpk, quietly = TRUE)
+library (ompr, quietly = TRUE)
+library (ompr.roi, quietly = TRUE)
+```
+
+
+```{r base_case_4var1}
+Solution1 <- MIPModel() %>%
+  add_variable(Chairs, type = "continuous", lb = 0) %>%
+  add_variable(Desks, type = "continuous",lb = 0) %>%
+  add_variable(Frames, type = "continuous",lb = 0) %>%
+  add_variable(Tables, type = "continuous", lb = 0) %>%
+  add_variable(Profit, Type = "continuous", lb =0) %>%
+  
+  set_objective(Profit, "max") %>%
+  
+  add_constraint(Profit==20*Chairs + 14*Desks + 3*Frames + 16*Tables) %>% #profit
+  add_constraint(16*Chairs + 2*Desks + 1*Frames + 4*Tables <= 1440) %>% #fabrication
+  add_constraint(8*Chairs + 6*Desks + 1*Frames + 8*Tables <= 1440) %>% #assembly
+  add_constraint(6*Chairs + 4*Desks + 1*Frames + 25*Tables <= 2000) %>% #machining
+  add_constraint(7*Chairs + 10*Desks + 2*Frames + 12*Tables <= 1000) %>% #painting
+  add_constraint(40*Chairs + 25*Desks + 5*Frames + 16*Tables <= 9600) %>% #wood
+  
+  solve_model(with_ROI(solver = "glpk"))
+
+```
+
+```{r base_status_4var1}
+print(solver_status(Solution1))
+```
+
+```{r base_solution_4var1}
+p<- get_solution(Solution1, Profit)
+c<- get_solution(Solution1, Chairs)
+d<- get_solution(Solution1, Desks)
+f<- get_solution(Solution1, Frames)
+t<- get_solution(Solution1, Tables)
+```
+
+## Results on changing one parameter:
+
+```{r base_table_4var1}
+m <- data.frame(p,c,d,f,t, row.names = NULL)
+colnames(m) <- c('Profit\n$','#Chairs', '#Desks', '#Frames', '#Tables')
+pandoc.table(m)
+```
+
+
+With increase in fabrication hours for chairs to 16hrs, the problem was changed. Previously the maximum profit was in just building chairs. But now as we increased the hours in fabricating the chair, the best possible way to earn more is by building approximate 85 chairs and 41 tables. In addition, the profit margin has decreased to $2266 as compared to the previous example. 
+
+
+
